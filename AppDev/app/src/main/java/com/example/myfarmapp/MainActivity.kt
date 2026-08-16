@@ -22,14 +22,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
+import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var tts: TextToSpeech
 
-    // State สำหรับควบคุม UI
+    // IP Address ของ ESP32 (เปลี่ยนตามที่เห็นใน Serial Monitor)
+    private val esp32Ip = "http://192.168.1.11"
+
     private var isTargetOn by mutableStateOf(false)
     private var resultText by mutableStateOf("กดปุ่มด้านล่างแล้วพูดคำสั่ง...")
 
@@ -37,13 +42,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // เริ่มต้นระบบ TTS และ Permission
         tts = TextToSpeech(this, this)
         checkAudioPermission()
         setupSpeechRecognizer()
 
         setContent {
-            // เรียก Theme ตามที่มีในโปรเจกต์
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
@@ -101,14 +104,33 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         when {
             command.contains("เปิด") || command.contains("on") -> {
                 isTargetOn = true
+                sendRequestToEsp32("$esp32Ip/on")
                 speakOut("เปิดสวิตช์เรียบร้อยแล้วค่ะ")
             }
             command.contains("ปิด") || command.contains("off") -> {
                 isTargetOn = false
+                sendRequestToEsp32("$esp32Ip/off")
                 speakOut("ปิดสวิตช์เรียบร้อยแล้วค่ะ")
             }
             else -> {
                 speakOut("ไม่เข้าใจคำสั่ง กรุณาพูดว่าเปิดหรือปิดค่ะ")
+            }
+        }
+    }
+
+    // ฟังก์ชันยิง HTTP Request ไปที่ ESP32
+    private fun sendRequestToEsp32(urlString: String) {
+        thread {
+            try {
+                val url = URL(urlString)
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 3000
+                connection.readTimeout = 3000
+                connection.responseCode // ส่งคำสั่งจริง
+                connection.disconnect()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -145,7 +167,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 }
 
-// Layout หน้าจอหลักที่เขียนด้วย Jetpack Compose
 @Composable
 fun VoiceControlScreen(
     isTargetOn: Boolean,
@@ -159,9 +180,8 @@ fun VoiceControlScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // ปุ่มเป้าหมาย: ตั้ง enabled = false เพื่อห้ามกดตรงๆ
         Button(
-            onClick = { /* กดไม่ได้อยู่แล้ว */ },
+            onClick = { },
             enabled = false,
             modifier = Modifier
                 .width(220.dp)
@@ -176,7 +196,6 @@ fun VoiceControlScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // ข้อความแสดงผลคำที่ฟังได้
         Text(
             text = resultText,
             fontSize = 18.sp,
@@ -185,7 +204,6 @@ fun VoiceControlScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // ปุ่มกดเพื่อเริ่มรับเสียง
         Button(
             onClick = onListenClick,
             modifier = Modifier.padding(8.dp)
@@ -197,4 +215,3 @@ fun VoiceControlScreen(
         }
     }
 }
-
